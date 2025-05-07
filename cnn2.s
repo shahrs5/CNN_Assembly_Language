@@ -124,13 +124,25 @@ maxpool_loop:
     la   a3,output_matrix3
 
 
-    #for(f=0 , f<10 ,f++)
-    #increment the wieght matrix address by 1152
-    #increment the bias vector address by 1
+    li   t0, 0           # f = 0
+    li   t1, 10          # loop upper bound
+
+    for_dense:
     call denselayer
 
+    # increment weight matrix pointer by 1152 floats (4 * 1152 = 4608 bytes)
+    li   t2, 4608
+    add  a1, a1, t2
 
-    # end for
+    # increment bias vector pointer by 1 float (4 bytes)
+    addi a2, a2, 4
+
+    # increment output pointer by 1 float (4 bytes)
+    addi a3, a3, 4
+
+    # increment loop counter
+    addi t0, t0, 1
+    blt  t0, t1, for_dense
 
 
 
@@ -324,7 +336,7 @@ print:
     li t0 ,1
     li t0 ,2
     li t0, 3
-    
+
     slli t2, t5, 2
     add  t3, t3, t2
     sub  t1, t1, t5
