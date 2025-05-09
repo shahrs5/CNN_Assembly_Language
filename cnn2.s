@@ -41,6 +41,14 @@ output_matrix3:
         .float 0.0
     .endr
 
+probability_matrix:
+    .rept 10
+        .float 0.0
+    .endr
+
+
+
+
 
 
 
@@ -144,7 +152,14 @@ maxpool_loop:
     addi t0, t0, 1
     blt  t0, t1, for_dense
 
+    
+    
+    la a0 ,output_matrix3
+    la a2 ,probability_matrix
+  
+    call softmax
 
+       
 
 
     j _finish
@@ -310,8 +325,156 @@ denselayer:
 
     ret
 
+# -----------------------------------------------
+# Softmax: Applies softmax on 10-element vector
+# Inputs:
+#   a0 = input base ptr (output_matrix3)
+#   a1 = input ptr (looping through each element)
+#   a2 = output ptr (probability_matrix)
+# Assumes 10 elements
 
 
+
+
+# .globl softmax
+# softmax:
+#     mv s0 ,a0 #address of input
+#     mv s1 ,a1 # address of output
+
+
+
+#     # make a for loop untill vector is exhausted
+#     li t1 ,10 # input vector size
+#     vsetvli t1, t0, e32
+#     vle32.v v1, (s0)
+#     vfredmul v2,v1 #reduce by multiplication
+#     #move v2 to f0
+#     # end loop
+
+
+
+#     mv fa0 ,s1 #move the data at address s1 to fa0 theb call taylor_exp(fa0)
+
+#     call taylor_exp
+#     #taylor-exp return value in fa0
+
+#     # divide f0 by fa0 and store in f0
+#     #store f0 at address s2
+
+
+
+
+
+    
+  
+#     ret
+
+
+
+    .globl softmax
+softmax:
+    # --- save arguments ---
+    mv   s0, a0        # s0 ← input array base address
+    # mv   s1, a1        # s1 ← number of elements (n)
+    mv   s1, a1        # s2 ← output array base address
+
+    # --- first pass: compute exp(x[i]) and accumulate sum in f1 ---
+    li   t0, 0         # t0 = i = 0
+    fmv.s.x f1, zero   # f1 = 0.0 (sum accumulator)
+
+
+    li t4 ,10 #size of array
+loop_exp:
+    bge  t0, t4, do_norm   # if i ≥ n, jump to normalization
+    slli t1, t0, 2         # t1 = byte offset = i * 4
+    add  t2, s0, t1        # t2 = &input[i]
+    flw  fa0, 0(t2)        # fa0 = input[i]
+    call taylor_exp        # → fa0 = exp(input[i])
+    # store exp(x[i]) to output[i]
+    add  t3, s1, t1        # t3 = &output[i]
+    fsw  fa0, 0(t3)
+    # sum += exp(x[i])
+    fadd.s f1, f1, fa0
+
+    addi t0, t0, 1
+    j    loop_exp
+
+    # --- second pass: normalize each exp(x[i]) by the sum ---
+do_norm:
+    li   t0, 0             # reset i = 0
+
+loop_norm:
+    bge  t0, t4, done      # if i ≥ n, we’re done
+    slli t1, t0, 2         # byte offset = i * 4
+    add  t2, s1, t1        # t2 = &output[i]
+    flw  fa0, 0(t2)        # fa0 = exp(x[i])
+    fdiv.s fa0, fa0, f1    # fa0 = exp(x[i]) / sum
+    fsw  fa0, 0(t2)        # output[i] = softmax(x[i])
+
+    addi t0, t0, 1
+    j    loop_norm
+
+done:
+    ret
+
+
+
+
+
+
+
+# -----------------------------------------------
+# exp_approx: Approximate exp(f0) using a simple Taylor expansion
+# Input:
+#   f0 = input float
+# Output:
+#   f0 = exp(f0)
+# Approximation: 1 + x + x^2/2 + x^3/6 (good for small x)
+# -----------------------------------------------
+.globl taylor_exp
+.taylor_exp:
+    li t0 ,1
+    fcvt.s.w f0,t0 #accumulator
+
+    fmv.s f1, fa0        # f1 = x
+    fmul.s f2, f1, f1   # f2 = x^2
+    fmul.s f3, f2, f1   # f3 = x^3
+    fmul.s f4, f3, f1   # f3 = x^4
+    fmul.s f5, f4, f1   # f3 = x^5
+
+    fadd.s f0, f0, f1
+
+    li   t0, 2
+    fcvt.s.w f6, t0
+    fdiv.s f2, f2, f6   # x^2 / 2
+
+    fadd.s f0,f0,f2
+
+
+
+    li   t0, 6
+    fcvt.s.w f7, t0
+    fdiv.s f3, f3, f7   # x^3 / 6
+
+    fadd.s f0,f0, f3
+
+
+    li  t0, 24
+    fcvt.s.w f8, t0
+    fdiv.s f4, f4, f8   # x^4 / 24
+
+    fadd.s f0,f0,f4
+
+    fmv.s fa0,f0
+
+    # li   t0, 1
+    # fcvt.s.w f6, t0     # 1.0
+
+    # fadd.s f0, f6, f1   # f0 = 1 + x
+    # fadd.s f0, f0, f2   # f0 += x^2/2
+    # fadd.s f0, f0, f3   # f0 += x^3/6
+
+    ret
 
 
 #----------------------------------------------------------------------
