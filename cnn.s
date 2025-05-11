@@ -75,19 +75,20 @@ conv_loop:                 # Start of convolution loop over 8 filters
     slli t6, t0, 2         # t6 = f * 4 (bytes) - offset for current filter's bias
     add  a6, a3, t6        # a6 = address of current filter's bias value
 
-    mv   a7, t0            # Pass filter index in a7 if needed by subroutines
+    mv   a7, t0            # Pass filter index in a7 if needed by subroutines (redundant)
 
     mv   a1, a4            # Move kernel address to a1 for conv2d function
     mv   a2, a5            # Move output address to a2 for conv2d function
     mv   a3, a6            # Move bias address to a3 for conv2d function
     call conv2d            # Call convolution function for this filter
 
+
     addi t0, t0, 1         # Increment filter index f++
     li   t5, 8             # We have 8 filters total
     blt  t0, t5, conv_loop # If f < 8, loop back to process next filter
 
-    # Reuse a2 still pointing to output_filter
-    call print             # Print the output of convolution operation
+    
+    # j _finish                #for debugiing uncomment as needed
 
     # Maxpool each of the 8 output feature maps
     la   a0, output_filter # Load address of convolution output
@@ -146,15 +147,15 @@ maxpool_loop:              # Start of maxpooling loop over 8 feature maps
   
     call softmax           # Apply softmax to convert raw outputs to probabilities
 
-       
 
 
-    j _finish              # Jump to finish routine
 
-_finish:                   # Program termination routine
-    li   t0, 0xd0500000    # Load special address for system control
-    sb   zero, 0(t0)       # Store 0 to signal program termination
-1:  j    1b                # Infinite loop as a fallback if termination fails
+_finish:
+    li   x3, 0xd0580000   # VeeR’s tohost address
+    addi x5, x0, 0xff     # status ≔ 0xff (often “success”)
+    sb   x5, 0(x3)        # store byte
+    # ebreak
+    beq  x0, x0, _finish  # spin forever
 
 #----------------------------------------------------------------------
 # conv2d: Convolution 5x5 on 28x28 → 24x24 output
@@ -174,6 +175,14 @@ _finish:                   # Program termination routine
 
 .globl conv2d              # Make conv2d function globally accessible
 conv2d:                    # Start of convolution function
+    addi sp, sp, -28       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
+    sw   t0, 0(sp)
+    sw   t1, 4(sp)
+    sw   t2, 8(sp)
+    sw   t3, 12(sp)
+    sw   t4, 16(sp)
+    sw   t5, 20(sp)
+    sw   t6, 24(sp)
     li   t6, 5             # Kernel size is 5x5
     mv   s0, a0            # s0 = input matrix address
     mv   s2, a2            # s2 = output matrix address
@@ -204,6 +213,7 @@ conv2d:                    # Start of convolution function
     addi s4, s4, 20        # Move to next filter row (5 floats * 4 bytes)
     addi t3, t3, 112       # Move to next input row (28 floats * 4 bytes)
     addi t2, t2, 1         # Increment filter row counter
+
     blt  t2, t4, .conv_fi  # If not done with filter rows, continue (replaced t7 with t4)
 
     vfmv.f.s f0, v4        # Move accumulated sum from vector to scalar
@@ -221,6 +231,16 @@ conv2d:                    # Start of convolution function
 
     addi t0, t0, 1         # Increment row counter i++
     blt  t0, t6, .conv_i   # If i < 24, continue with next row
+
+
+    lw   t0, 0(sp)
+    lw   t1, 4(sp)
+    lw   t2, 8(sp)
+    lw   t3, 12(sp)
+    lw   t4, 16(sp)
+    lw   t5, 20(sp)
+    lw   t6, 24(sp)
+    addi sp, sp, 28 
 
     ret                    # Return from function
 
@@ -240,6 +260,14 @@ conv2d:                    # Start of convolution function
 
 .globl maxpool             # Make maxpool function globally accessible
 maxpool:                   # Start of maxpooling function
+    addi sp, sp, -28       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
+    sw   t0, 0(sp)
+    sw   t1, 4(sp)
+    sw   t2, 8(sp)
+    sw   t3, 12(sp)
+    sw   t4, 16(sp)
+    sw   t5, 20(sp)
+    sw   t6, 24(sp)
     li   t6, 12            # Output size is 12x12
     mv   s0, a0            # s0 = input feature map address
     mv   s1, a1            # s1 = output pooled map address
@@ -279,11 +307,30 @@ maxpool:                   # Start of maxpooling function
     addi t0, t0, 1         # Increment row counter i++
     blt  t0, t6, .pool_i   # If i < 12, continue with next row
 
+
+
+    lw   t0, 0(sp)
+    lw   t1, 4(sp)
+    lw   t2, 8(sp)
+    lw   t3, 12(sp)
+    lw   t4, 16(sp)
+    lw   t5, 20(sp)
+    lw   t6, 24(sp)
+    addi sp, sp, 28 
+
     ret                    # Return from function
 
 
    .globl denselayer       # Make denselayer function globally accessible
 denselayer:                # Start of dense layer function
+    addi sp, sp, -28       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
+    sw   t0, 0(sp)
+    sw   t1, 4(sp)
+    sw   t2, 8(sp)
+    sw   t3, 12(sp)
+    sw   t4, 16(sp)
+    sw   t5, 20(sp)
+    sw   t6, 24(sp)
     mv s0, a0              # s0 = flattened input vector (1152 floats)
     mv s1, a1              # s1 = weights for this neuron (1152 floats)
     mv s2, a2              # s2 = bias for this neuron
@@ -313,6 +360,19 @@ denselayer:                # Start of dense layer function
     fadd.s f2, f0, f1      # Add bias to weighted sum
     fsw f2, 0(s3)          # Store result in output neuron
 
+
+
+
+
+    lw   t0, 0(sp)
+    lw   t1, 4(sp)
+    lw   t2, 8(sp)
+    lw   t3, 12(sp)
+    lw   t4, 16(sp)
+    lw   t5, 20(sp)
+    lw   t6, 24(sp)
+    addi sp, sp, 28 
+
     ret                    # Return from function
 
 # -----------------------------------------------
@@ -326,6 +386,14 @@ denselayer:                # Start of dense layer function
 
     .globl softmax         # Make softmax function globally accessible
 softmax:                   # Start of softmax function
+    addi sp, sp, -28       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
+    sw   t0, 0(sp)
+    sw   t1, 4(sp)
+    sw   t2, 8(sp)
+    sw   t3, 12(sp)
+    sw   t4, 16(sp)
+    sw   t5, 20(sp)
+    sw   t6, 24(sp)
     # --- save arguments ---
     mv   s0, a0            # s0 = input array base address
     # mv   s1, a1          # s1 = number of elements (n) - commented out, not used
@@ -369,6 +437,18 @@ loop_norm:                 # Start of normalization loop
     j    loop_norm         # Continue loop
 
 done:                      # End of softmax function
+
+
+
+
+    lw   t0, 0(sp)
+    lw   t1, 4(sp)
+    lw   t2, 8(sp)
+    lw   t3, 12(sp)
+    lw   t4, 16(sp)
+    lw   t5, 20(sp)
+    lw   t6, 24(sp)
+    addi sp, sp, 28 
     ret                    # Return from function
 
 # -----------------------------------------------
