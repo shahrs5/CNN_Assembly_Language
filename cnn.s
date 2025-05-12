@@ -102,6 +102,10 @@ _start:                   # Main entry point of the program
     la a2, probability_matrix # Load address where softmax probabilities will be stored
   
     call softmax           # Apply softmax to convert raw outputs to probabilities
+    call print_input
+    call print_output_filter
+    call print_output_pool
+    call print_probabilities
 
 
 
@@ -474,33 +478,117 @@ taylor_exp:                # Start of exponential approximation function
     ret                    # Return from function
 
 #----------------------------------------------------------------------
-.globl print               # Make print function globally accessible
-# Inputs:
-#   a0 = vector pointer
-#   a1 = vector size
-print:                     # Start of print function (debug output)
-    mv   t6, a1            # t6 = vector size
-    mv   t3, a0            # t3 = vector address
-    mv   t1, t6            # t1 = remaining elements
-.print_loop:               # Start of print loop
-    beq  t1, zero, .print_done # If no elements left, finish
-    vsetvli t5, t1, e32    # Set vector length for remaining elements
+.globl print_input              # Make print function globally accessible
+
+print_input:                     # Start of print function (debug output)
+    la s0, input_matrix
+    li s1 ,784
+.print_loop_input:               # Start of print loop
+    beq  s1, zero, .print_done_input # If no elements left, finish
+    vsetvli t1, s1, e32    # Set vector length for remaining elements
     li t0, 1               # Debug instruction (no actual operation)
     li t0, 2               # Debug instruction (no actual operation)
     li t0, 3               # Debug instruction (no actual operation)
 
-    vle32.v v0, (t3)       # Load vector chunk into v0 (not printed, just loaded)
+    vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
 
     li t0, 1               # Debug instruction (no actual operation)
     li t0, 2               # Debug instruction (no actual operation)
     li t0, 3               # Debug instruction (no actual operation)
 
-    slli t2, t5, 2         # t2 = processed elements * 4 (bytes)
-    add  t3, t3, t2        # Advance vector pointer
-    sub  t1, t1, t5        # Reduce remaining element count
-    j    .print_loop       # Continue loop
-.print_done:               # End of print function
+    slli t2, t1, 2         # t2 = processed elements * 4 (bytes)
+    add  s0, s0, t2       # Advance vector pointer
+    sub  s1, s1, t1       # Reduce remaining element count
+    j    .print_loop_input      # Continue loop
+.print_done_input:               # End of print function
     ret                    # Return from function
+
+
+
+.globl print_output_filter             # Make print function globally accessible
+
+print_output_filter:                     # Start of print function (debug output)
+    la s0, output_filter
+    li s1 ,4608
+.print_loop_filter:               # Start of print loop
+    beq  s1, zero, .print_done_filter # If no elements left, finish
+    vsetvli t1, s1, e32    # Set vector length for remaining elements
+    li t0, 2              # Debug instruction (no actual operation)
+    li t0, 3               # Debug instruction (no actual operation)
+    li t0, 4               # Debug instruction (no actual operation)
+
+    vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
+
+    li t0, 2             # Debug instruction (no actual operation)
+    li t0, 3               # Debug instruction (no actual operation)
+    li t0, 4               # Debug instruction (no actual operation)
+
+    slli t2, t1, 2         # t2 = processed elements * 4 (bytes)
+    add  s0, s0, t2       # Advance vector pointer
+    sub  s1, s1, t1       # Reduce remaining element count
+    j    .print_loop_filter       # Continue loop
+.print_done_filter:               # End of print function
+    ret                    # Return from function
+
+
+
+
+
+
+.globl print_output_pool          # Make print function globally accessible
+
+print_output_pool:                     # Start of print function (debug output)
+    la s0, output_pool
+    li s1 ,1152
+.print_loop_pool:               # Start of print loop
+    beq  s1, zero, .print_done_pool # If no elements left, finish
+    vsetvli t1, s1, e32    # Set vector length for remaining elements
+    li t0, 3              # Debug instruction (no actual operation)
+    li t0, 4               # Debug instruction (no actual operation)
+    li t0, 5               # Debug instruction (no actual operation)
+
+    vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
+
+    li t0, 3             # Debug instruction (no actual operation)
+    li t0, 4               # Debug instruction (no actual operation)
+    li t0, 5               # Debug instruction (no actual operation)
+
+    slli t2, t1, 2         # t2 = processed elements * 4 (bytes)
+    add  s0, s0, t2       # Advance vector pointer
+    sub  s1, s1, t1       # Reduce remaining element count
+    j    .print_loop_pool      # Continue loop
+.print_done_pool:               # End of print function
+    ret                    # Return from function
+
+
+
+
+
+.globl print_probabilities             # Make print function globally accessible
+
+print_probabilities:                     # Start of print function (debug output)
+    la s0, probability_matrix
+    li s1 ,10
+.print_loop_prob:               # Start of print loop
+    beq  s1, zero, .print_done_prob# If no elements left, finish
+    vsetvli t1, s1, e32    # Set vector length for remaining elements
+    li t0, 4              # Debug instruction (no actual operation)
+    li t0, 5               # Debug instruction (no actual operation)
+    li t0, 6               # Debug instruction (no actual operation)
+
+    vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
+
+    li t0, 4              # Debug instruction (no actual operation)
+    li t0, 5               # Debug instruction (no actual operation)
+    li t0, 6               # Debug instruction (no actual operation)
+
+    slli t2, t1, 2         # t2 = processed elements * 4 (bytes)
+    add  s0, s0, t2       # Advance vector pointer
+    sub  s1, s1, t1       # Reduce remaining element count
+    j    .print_loop_prob      # Continue loop
+.print_done_prob:               # End of print function
+    ret                    # Return from function
+
 
 .section .data
 .align 4
