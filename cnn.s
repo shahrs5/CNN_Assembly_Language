@@ -393,13 +393,15 @@ softmax:                   # Start of softmax function
     # --- second pass: normalize each exp(x[i]) by the sum ---
     do_norm:                   # Start normalization phase
         li   t0, 0             # Reset counter i = 0
-        mv   s1,a1             
+        mv   s1,a1             # Reload address just to be cautious
+        mv   s2,a2         
 
     loop_norm:                 # Start of normalization loop
         bge  t0, t4, done      # If i ≥ n, we're done
         slli t1, t0, 2         # t1 = i * 4 (byte offset)
-        add  t2, s2, t1        # t2 = address of ouput [i]
-        flw  fa0, 0(t2)        # fa0 = exp(x[i])
+        add  t2, s2, t1        # t2 = address of output [i]
+        add  t3 ,s1, t1         #t3 = address of intermediate output[i]
+        flw  fa0, 0(t3)        # fa0 = exp(x[i])
         fdiv.s fa0, fa0, f1    # fa0 = exp(x[i]) / sum (normalize)
         fsw  fa0, 0(t2)        # output[i] = softmax(x[i])
 
