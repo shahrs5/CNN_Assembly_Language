@@ -19,3 +19,4 @@ parse: execute
 	python3 parser.py
 
 .PHONY: all clean compile execute parse
+
