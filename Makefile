@@ -8,7 +8,7 @@ clean:
 	rm -f *.txt *.hex *.dis *.exe
 
 compile:
-	$(GCC_PREFIX)-gcc $(ABI) -lgcc -T$(LINK) -o TEST.exe cnn.s -nostartfiles -lm
+	$(GCC_PREFIX)-gcc $(ABI) -lgcc -T$(LINK) -o TEST.exe test.s -nostartfiles -lm
 	$(GCC_PREFIX)-objcopy -O verilog TEST.exe program.hex
 	$(GCC_PREFIX)-objdump -S TEST.exe > TEST.dis
 

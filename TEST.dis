@@ -1,0 +1,112 @@
+
+TEST.exe:     file format elf32-littleriscv
+
+
+Disassembly of section .text:
+
+80000000 <_start>:
+80000000:	70041517          	auipc	a0,0x70041
+80000004:	20050513          	addi	a0,a0,512 # f0041200 <output_filter>
+80000008:	70040597          	auipc	a1,0x70040
+8000000c:	ff858593          	addi	a1,a1,-8 # f0040000 <output_pool>
+80000010:	4281                	li	t0,0
+
+80000012 <maxpool_loop>:
+80000012:	24000313          	li	t1,576
+80000016:	026283b3          	mul	t2,t0,t1
+8000001a:	038a                	slli	t2,t2,0x2
+8000001c:	00750633          	add	a2,a0,t2
+80000020:	09000e13          	li	t3,144
+80000024:	03c28eb3          	mul	t4,t0,t3
+80000028:	0e8a                	slli	t4,t4,0x2
+8000002a:	01d586b3          	add	a3,a1,t4
+8000002e:	8532                	mv	a0,a2
+80000030:	85b6                	mv	a1,a3
+80000032:	201d                	jal	80000058 <maxpool>
+80000034:	0285                	addi	t0,t0,1
+80000036:	4f21                	li	t5,8
+80000038:	fde2cde3          	blt	t0,t5,80000012 <maxpool_loop>
+8000003c:	70040517          	auipc	a0,0x70040
+80000040:	fc450513          	addi	a0,a0,-60 # f0040000 <output_pool>
+80000044:	2851                	jal	800000d8 <print_output_pool>
+
+80000046 <_finish>:
+80000046:	d05801b7          	lui	gp,0xd0580
+8000004a:	0ff00293          	li	t0,255
+8000004e:	00518023          	sb	t0,0(gp) # d0580000 <_end+0x5057fefe>
+80000052:	9002                	ebreak
+80000054:	fe0009e3          	beqz	zero,80000046 <_finish>
+
+80000058 <maxpool>:
+80000058:	1111                	addi	sp,sp,-28
+8000005a:	c016                	sw	t0,0(sp)
+8000005c:	c21a                	sw	t1,4(sp)
+8000005e:	c41e                	sw	t2,8(sp)
+80000060:	c672                	sw	t3,12(sp)
+80000062:	c876                	sw	t4,16(sp)
+80000064:	ca7a                	sw	t5,20(sp)
+80000066:	cc7e                	sw	t6,24(sp)
+80000068:	4fb1                	li	t6,12
+8000006a:	842a                	mv	s0,a0
+8000006c:	84ae                	mv	s1,a1
+8000006e:	4281                	li	t0,0
+
+80000070 <.pool_i>:
+80000070:	4301                	li	t1,0
+
+80000072 <.pool_j>:
+80000072:	00129393          	slli	t2,t0,0x1
+80000076:	4e61                	li	t3,24
+80000078:	03c383b3          	mul	t2,t2,t3
+8000007c:	00131e13          	slli	t3,t1,0x1
+80000080:	93f2                	add	t2,t2,t3
+80000082:	038a                	slli	t2,t2,0x2
+80000084:	00740eb3          	add	t4,s0,t2
+80000088:	4e61                	li	t3,24
+8000008a:	0e0a                	slli	t3,t3,0x2
+8000008c:	01ce8f33          	add	t5,t4,t3
+80000090:	000ea007          	flw	ft0,0(t4)
+80000094:	004ea087          	flw	ft1,4(t4)
+80000098:	000f2107          	flw	ft2,0(t5)
+8000009c:	004f2187          	flw	ft3,4(t5)
+800000a0:	28101253          	fmax.s	ft4,ft0,ft1
+800000a4:	283112d3          	fmax.s	ft5,ft2,ft3
+800000a8:	28521353          	fmax.s	ft6,ft4,ft5
+800000ac:	03f28e33          	mul	t3,t0,t6
+800000b0:	9e1a                	add	t3,t3,t1
+800000b2:	0e0a                	slli	t3,t3,0x2
+800000b4:	9e26                	add	t3,t3,s1
+800000b6:	006e2027          	fsw	ft6,0(t3)
+800000ba:	0305                	addi	t1,t1,1
+800000bc:	fbf34be3          	blt	t1,t6,80000072 <.pool_j>
+800000c0:	0285                	addi	t0,t0,1
+800000c2:	fbf2c7e3          	blt	t0,t6,80000070 <.pool_i>
+800000c6:	4282                	lw	t0,0(sp)
+800000c8:	4312                	lw	t1,4(sp)
+800000ca:	43a2                	lw	t2,8(sp)
+800000cc:	4e32                	lw	t3,12(sp)
+800000ce:	4ec2                	lw	t4,16(sp)
+800000d0:	4f52                	lw	t5,20(sp)
+800000d2:	4fe2                	lw	t6,24(sp)
+800000d4:	0171                	addi	sp,sp,28
+800000d6:	8082                	ret
+
+800000d8 <print_output_pool>:
+800000d8:	70040417          	auipc	s0,0x70040
+800000dc:	f2840413          	addi	s0,s0,-216 # f0040000 <output_pool>
+800000e0:	48000493          	li	s1,1152
+
+800000e4 <.print_loop_pool>:
+800000e4:	cc91                	beqz	s1,80000100 <.print_done_pool>
+800000e6:	0104f357          	vsetvli	t1,s1,e32,m1,tu,mu
+800000ea:	428d                	li	t0,3
+800000ec:	4291                	li	t0,4
+800000ee:	4295                	li	t0,5
+800000f0:	02046007          	vle32.v	v0,(s0)
+800000f4:	00231393          	slli	t2,t1,0x2
+800000f8:	941e                	add	s0,s0,t2
+800000fa:	406484b3          	sub	s1,s1,t1
+800000fe:	b7dd                	j	800000e4 <.print_loop_pool>
+
+80000100 <.print_done_pool>:
+80000100:	8082                	ret

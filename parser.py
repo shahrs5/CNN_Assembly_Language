@@ -50,8 +50,8 @@ def reshape_and_print(results):
       - probabilities as a flat list (no rounding)
     """
     specs = {
-        "input_matrix": (28, 28, 1),     # (rows, cols, depth)
-        "output_filter": (24, 24, 8),    # 8 filters of 24×24
+        # "input_matrix": (28, 28, 1),     # (rows, cols, depth)
+        # "output_filter": (24, 24, 8),    # 8 filters of 24×24
         "output_pool": (12, 12, 8),      # 8 pools of 12×12
         "probabilities": (10, None, 1),  # 10 values
     }
