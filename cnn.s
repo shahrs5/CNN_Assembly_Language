@@ -252,10 +252,10 @@ maxpool:                   # Start of maxpooling function
             vle32.v v0, (t4)       # Load top 2x1 window into v0
             vle32.v v1, (t5)       # Load bottom 2x1 window into v1
             vmax.vv v2, v0, v1     # Find max between rows
-            # vmv.v.i v4, 0          # Initialize reduction vector # wrong reduction vector
-            li t6 ,0xff800000
-            fmv.w.x  f5, t6             # Move bit pattern into float register
-            vfmv.v.f v4, f5            # Broadcast float to vector
+            vmv.v.i v4, 0          # Initialize reduction vector does RELU aswell
+            # li t6 ,0xff800000
+            # fmv.w.x  f5, t6             # Move bit pattern into float register
+            # vfmv.v.f v4, f5            # Broadcast float to vector
 
 
             vfredmax.vs v4, v2, v4 # Find maximum value in window
@@ -631,6 +631,7 @@ input_matrix:
 .float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
 .float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
 .float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
+
 
 
 
