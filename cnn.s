@@ -17,25 +17,20 @@ _start:                   # Main entry point of the program
 
     li   t0, 0             # Initialize filter index f = 0
     conv_loop:                 # Start of convolution loop over 8 filters
-        li   t1, 25            # Each filter has 25 elements (5x5 kernel)
-        mul  t2, t0, t1        # t2 = f * 25 (elements)
-        slli t2, t2, 2         # t2 = f * 25 * 4 (bytes) - shift left logical immediate by 2 (multiply by 4)
-        add  a4, a1, t2        # a4 = address of current filter's kernel (filter_kernel + offset)
-
-        li   t3, 576           # Each output feature map has 576 elements (24x24)
-        mul  t4, t0, t3        # t4 = f * 576 (elements)
-        slli t4, t4, 2         # t4 = f * 576 * 4 (bytes) - multiply by 4 for float size
-        add  a5, a2, t4        # a5 = address where current filter's output will be stored
-
-        slli t6, t0, 2         # t6 = f * 4 (bytes) - offset for current filter's bias
-        add  a6, a3, t6        # a6 = address of current filter's bias value
-
-        mv   a7, t0            # Pass filter index in a7 if needed by subroutines (redundant)
-
-        mv   a1, a4            # Move kernel address to a1 for conv2d function
-        mv   a2, a5            # Move output address to a2 for conv2d function
-        mv   a3, a6            # Move bias address to a3 for conv2d function
+        
         call conv2d            # Call convolution function for this filter
+        li   t1, 25            # Each filter has 25 elements (5x5 kernel)
+        slli t1, t1, 2         # t2 = f * 25 * 4 (bytes) - shift left logical immediate by 2 (multiply by 4)
+        add  a1, a1, t1        # a4 = address of current filter's kernel (filter_kernel + offset)
+
+        li   t1, 576           # Each output feature map has 576 elements (24x24)
+        slli t1, t1, 2         # t4 = f * 576 * 4 (bytes) - multiply by 4 for float size
+        add  a2, a2, t1            
+
+        li t1 ,1
+        slli t1 ,t1, 2         # t6 = f * 4 (bytes) - offset for current filter's bias
+        add  a3, a3, t1       # a6 = address of current filter's bias value
+
 
 
         addi t0, t0, 1         # Increment filter index f++
@@ -51,22 +46,19 @@ _start:                   # Main entry point of the program
 
     li   t0, 0             # Initialize filter index f = 0
     maxpool_loop:              # Start of maxpooling loop over 8 feature maps
-        li   t1, 576           # Each feature map has 576 elements (24x24)
-        mul  t2, t0, t1        # t2 = f * 576 (elements)
-        slli t2, t2, 2         # t2 = f * 576 * 4 (bytes)
-        add  a2, a0, t2        # a2 = address of current feature map
-
-        li   t3, 144           # Each pooled output has 144 elements (12x12)
-        mul  t4, t0, t3        # t4 = f * 144 (elements) 
-        slli t4, t4, 2         # t4 = f * 144 * 4 (bytes)
-        add  a3, a1, t4        # a3 = address where pooled output will be stored
-
-        mv   a0, a2            # Move feature map address to a0 for maxpool function
-        mv   a1, a3            # Move pooled output address to a1 for maxpool function
         call maxpool           # Call maxpooling function for this feature map
+        li   t1, 576           # Each feature map has 576 elements (24x24)
+        slli t1, t1, 2         # t2 = f * 576 * 4 (bytes)
+        add  a0, a0, t1        # a2 = address of current feature map
 
-        addi t0, t0, 1         # Increment filter index f++
-        li   t5, 8             # We have 8 feature maps to pool
+        li   t1, 144           # Each pooled output has 144 elements (12x12)
+        slli t1, t1, 2         # t4 = f * 144 * 4 (bytes)
+        add  a1, a1, t1        # a3 = address where pooled output will be stored
+
+
+
+    addi t0, t0, 1         # Increment filter index f++
+    li   t5, 8             # We have 8 feature maps to pool
     blt  t0, t5, maxpool_loop # If f < 8, loop back to process next feature map
 
     la   a0, output_pool   # Load address of pooled feature maps
@@ -641,43 +633,36 @@ filter_kernel:
     .float   0.049911,  0.145552, -0.020537, -0.187723, -0.131252
     .float   0.163713,  0.224705,  0.140069, -0.009085,  0.073234
     .float  -0.080659,  0.010824, -0.086331,  0.203459,  0.244409
-
     .float  -1.054972, -0.891024, -1.066550, -0.828543, -0.654060
     .float  -0.786513, -0.413009, -0.401602, -0.432393, -0.849205
     .float  -0.190523,  0.045326,  0.216727, -0.030382, -0.359319
     .float   0.350181,  0.340316,  0.487858,  0.364874,  0.259409
     .float   0.482986,  0.353294,  0.225865,  0.342781,  0.341477
-
     .float  -0.178495, -0.472485, -0.508939,  0.146645,  0.305071
     .float  -1.057735, -0.355156,  0.490745,  0.463817,  0.170792
     .float  -0.433517,  0.564238,  0.552975,  0.197741, -0.279824
     .float   0.272791,  0.584378,  0.121418, -0.373568, -0.231887
     .float   0.299926, -0.031639, -0.407140, -0.156032, -0.061682
-
     .float   0.273750,  0.310541,  0.470391, -0.055891, -0.402251
     .float   0.379908,  0.387477,  0.225295, -0.402449, -0.661950
     .float   0.408006,  0.495547, -0.003231, -0.497584, -0.559818
     .float   0.426277,  0.293883, -0.450071, -0.411655, -0.463014
     .float   0.308907, -0.218843, -0.678969, -0.654918, -0.878282
-
     .float   0.192461, -0.125563, -0.226632,  0.006193,  0.225292
     .float   0.208990,  0.043345, -0.004417, -0.264719, -0.372079
     .float   0.035871,  0.160617,  0.313575, -0.121912, -0.594081
     .float  -0.505590,  0.142334,  0.606456, -0.054825, -0.319844
     .float  -0.684762,  0.098203,  0.452869,  0.051462,  0.096053
-
     .float  -0.120633,  0.164645,  0.282223,  0.475194,  0.291666
     .float  -0.414444, -0.384494,  0.024740,  0.403475,  0.424486
     .float  -0.747294, -0.332456, -0.170921,  0.316539,  0.347904
     .float  -0.782172, -0.574138, -0.243847,  0.141671,  0.409410
     .float  -0.651157, -0.432430, -0.185768,  0.121586,  0.198998
-
     .float   0.168427, -0.004475, -0.116341, -0.465146, -0.472895
     .float   0.317201,  0.250817,  0.226554, -0.456673, -0.602053
     .float   0.078209,  0.507722,  0.514219, -0.068863, -0.439256
     .float  -0.231946,  0.160473,  0.504466,  0.311824, -0.176354
     .float  -0.263749, -0.127226,  0.223549,  0.458108,  0.486485
-
     .float   0.137269,  0.230076,  0.218404,  0.414103,  0.389986
     .float   0.270464,  0.570013,  0.722101,  0.660840,  0.469928
     .float  -0.033906,  0.095202,  0.032985,  0.161803,  0.184437
