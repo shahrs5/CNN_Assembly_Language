@@ -283,16 +283,62 @@ maxpool:                   # Start of maxpooling function
 
 
 
-# .global flatten
-# flatten:
-
-# for_i
+.global flatten
+flatten:
 
 
-# end
+    addi sp, sp, -32       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
+    sw   t0, 0(sp)
+    sw   t1, 4(sp)
+    sw   t2, 8(sp)
+    sw   t3, 12(sp)
+    sw   t4, 16(sp)
+    sw   t5, 20(sp)
+    sw   t6, 24(sp)
+    sw   ra, 28(sp)
+
+    mv s0 ,a0 # maxpool address
+    mv s1 ,a1 # flatten address
+    li t2 , 12 # dimension of matrix
+    li t0 ,0 # row loop counter
+    li t3 ,8 # vectors to load
+    li s2 , 576 # offset
+
+    row_loop:
 
 
-# ret
+        li t1,0 # column loop counter
+        column_loop:
+            
+            vsetvli zero, t3, e32 #
+            vlse32.v v0,(s0),s2 # strided segment load 576
+            vsw.v v0,(s1) # save 8 values at flatten
+
+            addi s0,s0,4 #offset maxpool
+            addi s1 ,s1,32 # offset flatten
+
+        addi t1 ,1 #increment column counter
+        blt t1,t2,column_loop
+        #end_column
+
+    addi t0 ,1 # increment row counter
+    blt t0,t2,row_loop
+    #end_row
+
+
+    lw   t0, 0(sp)
+    lw   t1, 4(sp)
+    lw   t2, 8(sp)
+    lw   t3, 12(sp)
+    lw   t4, 16(sp)
+    lw   t5, 20(sp)
+    lw   t6, 24(sp)
+    lw   ra, 28(sp)
+    addi sp, sp, 32
+
+
+
+ret
 
 
    .globl denselayer       # Make denselayer function globally accessible
@@ -721,10 +767,10 @@ output_pool:
       .float 0.0
     .endr
 
-# flattened_pool:
-# .rept 1152            # 12×12×8
-#       .float 0.0
-#     .endr
+ flattened_pool:
+ .rept 1152            # 12×12×8
+       .float 0.0
+    .endr
 
 
 weight_matrix: 
