@@ -61,7 +61,20 @@ _start:                   # Main entry point of the program
     li   t5, 8             # We have 8 feature maps to pool
     blt  t0, t5, maxpool_loop # If f < 8, loop back to process next feature map
 
-    la   a0, output_pool   # Load address of pooled feature maps
+
+
+
+    la a0 ,output_pool
+    la a1 ,flattened_pool
+
+    call flatten
+
+
+
+
+
+
+    la   a0, flattened_pool   # Load address of pooled feature maps
     la   a1, weight_matrix # Load address of fully connected layer weights
     la   a2, bias_vector   # Load address of fully connected layer biases
     la   a3, final_output  # Load address where final output will be stored
@@ -94,9 +107,12 @@ _start:                   # Main entry point of the program
     la a2, probability_matrix # Load address where softmax probabilities will be stored
   
     call softmax           # Apply softmax to convert raw outputs to probabilities
+
+    
     call print_input
     call print_output_filter
     call print_output_pool
+    call print_flatten
     call print_dense
     call print_probabilities
 
@@ -312,16 +328,16 @@ flatten:
             
             vsetvli zero, t3, e32 #
             vlse32.v v0,(s0),s2 # strided segment load 576
-            vsw.v v0,(s1) # save 8 values at flatten
+            vse32.v v0,(s1) # save 8 values at flatten
 
             addi s0,s0,4 #offset maxpool
             addi s1 ,s1,32 # offset flatten
 
-        addi t1 ,1 #increment column counter
+        addi t1 ,t1,1 #increment column counter
         blt t1,t2,column_loop
         #end_column
 
-    addi t0 ,1 # increment row counter
+    addi t0 ,t0,1 # increment row counter
     blt t0,t2,row_loop
     #end_row
 
@@ -600,7 +616,7 @@ print_output_filter:                     # Start of print function (debug output
 
 print_output_pool:                     # Start of print function (debug output)
     la s0, output_pool
-    li s1 ,1152 #12x12x8
+    li s1 ,1152 
 .print_loop_pool:               # Start of print loop
     beq  s1, zero, .print_done_pool # If no elements left, finish
     vsetvli t1, s1, e32    # Set vector length for remaining elements
@@ -623,6 +639,29 @@ print_output_pool:                     # Start of print function (debug output)
 
 
 
+.globl print_flatten            # Make print function globally accessible
+
+print_flatten:                     # Start of print function (debug output)
+    la s0, flattened_pool
+    li s1 ,1152 #12x12x8
+.print_loop_flatten:               # Start of print loop
+    beq  s1, zero, .print_done_flatten# If no elements left, finish
+    vsetvli t1, s1, e32    # Set vector length for remaining elements
+    li t0, 4              # Debug instruction (no actual operation)
+    li t0, 5               # Debug instruction (no actual operation)
+    li t0, 6               # Debug instruction (no actual operation)
+
+    vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
+
+    
+
+    slli t2, t1, 2         # t2 = processed elements * 4 (bytes)
+    add  s0, s0, t2       # Advance vector pointer
+    sub  s1, s1, t1       # Reduce remaining element count
+    j    .print_loop_flatten      # Continue loop
+.print_done_flatten:               # End of print function
+    ret                    # Return from function
+
 
 
 
@@ -634,9 +673,9 @@ print_dense:                     # Start of print function (debug output)
 .print_loop_dense:               # Start of print loop
     beq  s1, zero, .print_done_dense# If no elements left, finish
     vsetvli t1, s1, e32    # Set vector length for remaining elements
-    li t0, 4              # Debug instruction (no actual operation)
-    li t0, 5               # Debug instruction (no actual operation)
+    li t0, 5            # Debug instruction (no actual operation)
     li t0, 6               # Debug instruction (no actual operation)
+    li t0, 7               # Debug instruction (no actual operation)
 
     vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
 
@@ -659,9 +698,9 @@ print_probabilities:                     # Start of print function (debug output
 .print_loop_prob:               # Start of print loop
     beq  s1, zero, .print_done_prob# If no elements left, finish
     vsetvli t1, s1, e32    # Set vector length for remaining elements
-    li t0, 5             # Debug instruction (no actual operation)
-    li t0, 6               # Debug instruction (no actual operation)
+    li t0, 6            # Debug instruction (no actual operation)
     li t0, 7               # Debug instruction (no actual operation)
+    li t0, 8               # Debug instruction (no actual operation)
 
     vle32.v v0, (s0)       # Load vector chunk into v0 (not printed, just loaded)
 
