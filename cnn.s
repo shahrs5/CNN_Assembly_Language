@@ -377,6 +377,8 @@ denselayer:                # Start of dense layer function
     mv t3, s0              # t3 = input vector iterator
     mv t4, s1              # t4 = weight vector iterator
 
+    li t5, 8
+    vsetvli zero, t5, e32
     vmv.v.i v4, 0          # Initialize accumulator vector to 0
 
     .dense_loop:               # Start of loop processing input chunks
