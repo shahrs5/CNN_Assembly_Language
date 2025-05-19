@@ -85,12 +85,18 @@ def reshape_and_write(results, output_path="output.txt", decimals=3, prob_decima
 
             out.write(f"{key.replace('_', ' ').title()} ({len(data)} floats):\n")
 
+            # # === PROBABILITIES ===
+            # if key == "probabilities":
+            #     formatted = [
+            #         f"{math.ceil(v * prob_factor) / prob_factor:.{prob_decimals}f}"
+            #         for v in data
+            #     ]
+            #     out.write(str(formatted) + "\n\n")
+
             # === PROBABILITIES ===
             if key == "probabilities":
-                formatted = [
-                    f"{math.ceil(v * prob_factor) / prob_factor:.{prob_decimals}f}"
-                    for v in data
-                ]
+                # normal rounding to prob_decimals places
+                formatted = [ f"{v:.{prob_decimals}f}" for v in data ]
                 out.write(str(formatted) + "\n\n")
 
             # === DENSE OUTPUT ===

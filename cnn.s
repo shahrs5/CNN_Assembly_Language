@@ -80,31 +80,11 @@ _start:                   # Main entry point of the program
     la   a3, final_output  # Load address where final output will be stored
 
 
-    li   t0, 0             # Initialize classifier neuron index f = 0
-    li   t1, 10            # We have 10 output neurons (likely digits 0-9)
-
-    dense_loop:             # Start of dense (fully connected) layer loop
-        call denselayer        # Call dense layer computation for this neuron
-
-        # increment weight matrix pointer by 1152 floats (4 * 1152 = 4608 bytes)
-        li   t2, 4608          # Each output neuron has 1152 weights (12x12x8 inputs)
-        add  a1, a1, t2        # Move to next neuron's weights
-
-        # increment bias vector pointer by 1 float (4 bytes)
-        addi a2, a2, 4         # Move to next neuron's bias
-
-        # increment output pointer by 1 float (4 bytes)
-        addi a3, a3, 4         # Move to next output position
-
-        # increment loop counter
-        addi t0, t0, 1         # Increment neuron index f++
-    blt  t0, t1, dense_loop # If f < 10, continue loop for next neuron
-
+    call denselayer
     
     
     la a0, final_output    # Load address of neural network raw outputs
-    la a1, intermediate     # Load address for intermediate results
-    la a2, probability_matrix # Load address where softmax probabilities will be stored
+    la a1, probability_matrix # Load address where softmax probabilities will be stored
   
     call softmax           # Apply softmax to convert raw outputs to probabilities
 
@@ -357,204 +337,143 @@ flatten:
 ret
 
 
-   .globl denselayer       # Make denselayer function globally accessible
-denselayer:                # Start of dense layer function
-    addi sp, sp, -32       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
-    sw   t0, 0(sp)
-    sw   t1, 4(sp)
-    sw   t2, 8(sp)
-    sw   t3, 12(sp)
-    sw   t4, 16(sp)
-    sw   t5, 20(sp)
-    sw   t6, 24(sp)
-    sw   ra, 28(sp)
-    mv s0, a0              # s0 = flattened input vector (1152 floats)
-    mv s1, a1              # s1 = weights for this neuron (1152 floats)
-    mv s2, a2              # s2 = bias for this neuron
-    mv s3, a3              # s3 = output for this neuron
-
-    li t0, 1152            # Total input elements to process (12x12x8)
-    mv t3, s0              # t3 = input vector iterator
-    mv t4, s1              # t4 = weight vector iterator
-
-    li t5, 8
-    vsetvli zero, t5, e32
-    vmv.v.i v4, 0          # Initialize accumulator vector to 0
-
-    .dense_loop:               # Start of loop processing input chunks
-        vsetvli t1, t0, e32    # Set vector length based on remaining elements
-        vle32.v v0, (t3)       # Load input vector chunk
-        vle32.v v1, (t4)       # Load weight vector chunk
-        vfmul.vv v2, v0, v1    # Element-wise multiply inputs and weights
-        vfredosum.vs v4, v2, v4 # Accumulate dot product into v4
-
-        slli t2, t1, 2         # t2 = processed elements * 4 (bytes)
-        add t3, t3, t2         # Advance input pointer
-        add t4, t4, t2         # Advance weight pointer
-        sub t0, t0, t1         # Reduce remaining element count
-    bnez t0, .dense_loop   # Loop if elements remain
-
-    vfmv.f.s f0, v4        # Move accumulated sum from vector to scalar
-    flw f1, 0(s2)          # Load bias value
-    fadd.s f2, f0, f1      # Add bias to weighted sum
-    fsw f2, 0(s3)          # Store result in output neuron
 
 
+    .globl denselayer       # Make denselayer function globally accessible
+    denselayer:             # Start of dense layer function
+    mv s0 ,a0               #flatten pool
+    mv s1 ,a1               #weight matrix
+    mv s2 ,a2               #bias vector
+    mv s3 ,a3               #final output
+    li t2,10
+    li t4, 40
+
+    li t0,0 
+    dense_outer:
+        li a7,8
+        vsetvli a7,a7,e32
+        vmv.v.i v3,0 
+        mv s0,a0
+        li t5 ,1152 
+        li t1,0
+        slli a7,t0,2
+        add s4,s1,a7
+        dense_inner:
+
+            vsetvli t6,t5, e32
+            sub t5, t5,t6
+            slli a7,t6,2
+            
+            vle32.v v0 , (s0)
+            add s0,s0,a7
 
 
+            vlse32.v v1 , (s4),t4
+            mul a7,t6,t4
+            add s4 ,s4,a7
 
-    lw   t0, 0(sp)
-    lw   t1, 4(sp)
-    lw   t2, 8(sp)
-    lw   t3, 12(sp)
-    lw   t4, 16(sp)
-    lw   t5, 20(sp)
-    lw   t6, 24(sp)
-    lw   ra, 28(sp)
-    addi sp, sp, 32
+            vfmul.vv v2,v1,v0
 
-    ret                    # Return from function
+            vfredosum.vs v3,v2,v3
 
-# -----------------------------------------------
-# Softmax: Applies softmax on 10-element vector
-# Inputs:
-#   a0 = input base ptr (final_output)
-#   a1 = input ptr (looping through each element)
-#   a2 = output ptr (probability_matrix)
-# Assumes 10 elements
+            bnez t5 , dense_inner
 
 
-    .globl softmax         # Make softmax function globally accessible
-softmax:                   # Start of softmax function
-    addi sp, sp, -32      # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
-    sw   t0, 0(sp)
-    sw   t1, 4(sp)
-    sw   t2, 8(sp)
-    sw   t3, 12(sp)
-    sw   t4, 16(sp)
-    sw   t5, 20(sp)
-    sw   t6, 24(sp)
-    sw   ra, 28(sp)
-    # --- save arguments ---
-    mv   s0, a0            # s0 = input array base address
-    mv   s1, a1             # Using s1 intermediate storage
-    mv   s2, a2            # s2 = output array base address
+        done_inner:
 
-    # --- first pass: compute exp(x[i]) and accumulate sum in f1 ---
-    li   t0, 0             # Initialize element counter i = 0
-    fmv.s.x f1, zero       # f1 = 0.0 (sum accumulator for normalization)
+        flw f0,(s2)
+        vfmv.f.s f1,v3
+        fadd.s f1,f1,f0
+        fsw f1,(s3)
+    
+        addi s3,s3,4
+        addi s2,s2,4
+
+    addi t0 ,t0 ,1
+    blt t0,t2,dense_outer
+    done_outer:                                                                                                                                                                                        
 
 
-    li t4, 10              # Size of output array (number of classes)
-    loop_exp:                  # Start of loop to calculate exponentials
-        bge  t0, t4, do_norm   # If i ≥ n, jump to normalization
-        slli t1, t0, 2         # t1 = i * 4 (byte offset)
-        add  t2, s0, t1        # t2 = address of input[i]
-        flw  fa0, 0(t2)        # fa0 = input[i] (raw score)
-        call taylor_exp        # Call exponential function: fa0 = exp(input[i])
-        # store exp(x[i]) to output[i]
-        add  t3, s1, t1        # t3 = address of intermediate output[i]
-        fsw  fa0, 0(t3)        # Store exponential at intermediate location
-        # sum += exp(x[i])
-        fadd.s f1, f1, fa0     # Add to sum for normalization
-
-    addi t0, t0, 1         # Increment counter i++
-    j    loop_exp          # Continue loop
-
-    # --- second pass: normalize each exp(x[i]) by the sum ---
-    do_norm:                   # Start normalization phase
-        li   t0, 0             # Reset counter i = 0
-        mv   s1,a1             # Reload address just to be cautious
-        mv   s2,a2         
-
-    loop_norm:                 # Start of normalization loop
-        bge  t0, t4, done      # If i ≥ n, we're done
-        slli t1, t0, 2         # t1 = i * 4 (byte offset)
-        add  t2, s2, t1        # t2 = address of output [i]
-        add  t3 ,s1, t1         #t3 = address of intermediate output[i]
-        flw  fa0, 0(t3)        # fa0 = exp(x[i])
-        fdiv.s fa0, fa0, f1    # fa0 = exp(x[i]) / sum (normalize)
-        fsw  fa0, 0(t2)        # output[i] = softmax(x[i])
-
-    addi t0, t0, 1         # Increment counter i++
-    j    loop_norm         # Continue loop
-
-done:                      # End of softmax function
+    ret
+    
 
 
 
+.globl softmax
 
-    lw   t0, 0(sp)
-    lw   t1, 4(sp)
-    lw   t2, 8(sp)
-    lw   t3, 12(sp)
-    lw   t4, 16(sp)
-    lw   t5, 20(sp)
-    lw   t6, 24(sp)
-    lw   ra, 28(sp)
-    addi sp, sp, 32
-    ret                    # Return from function
+softmax:
+    mv s0 ,a0 #input dense
+    mv s1 ,a1 #output probabilities
+    mv s2 ,a1 #output probabilities second pass
 
-# -----------------------------------------------
-# exp_approx: Approximate exp(f0) using a simple Taylor expansion
-# Input:
-#   fa0 = input float
-# Output:
-#   fa0 = exp(fa0)
-# Approximation: 1 + x + x^2/2 + x^3/6 + x^4/24 + x^5/120 (Taylor series)
-# -----------------------------------------------
-.globl taylor_exp          # Make taylor_exp function globally accessible
-taylor_exp:                # Start of exponential approximation function
-    addi sp, sp, -28       # Allocate space on stack for t0–t6 (7 regs × 4 bytes)
-    sw   t0, 0(sp)
-    sw   t1, 4(sp)
-    sw   t2, 8(sp)
-    sw   t3, 12(sp)
-    sw   t4, 16(sp)
-    sw   t5, 20(sp)
-    sw   t6, 24(sp)
-    li t0, 1               # Load constant 1
-    fcvt.s.w f0, t0        # Convert to float: f0 = 1.0 (accumulator)
+    li t0,8  
+    vsetvli t0,t0,e32 
+    vmv.v.i v4, 0 #intialize accumulator
 
-    fmv.s f1, fa0          # f1 = x (input value)
-    fmul.s f2, f1, f1      # f2 = x^2
-    fmul.s f3, f2, f1      # f3 = x^3
-    fmul.s f4, f3, f1      # f4 = x^4
-    fmul.s f5, f4, f1      # f5 = x^5
+    li t0, 10  # total values
+    exponentiation:
+        vsetvli t1,t0,e32  # set vector load
+        sub t0,t0,t1     # update remaining values
+        vle32.v v0,(s0)   #load values from input
 
-    fadd.s f0, f0, f1      # f0 = 1 + x
-
-    li   t0, 2             # Load constant 2
-    fcvt.s.w f6, t0        # Convert to float: f6 = 2.0
-    fdiv.s f2, f2, f6      # f2 = x^2 / 2
-
-    fadd.s f0, f0, f2      # f0 = 1 + x + x^2/2
-
-    li   t0, 6             # Load constant 6
-    fcvt.s.w f7, t0        # Convert to float: f7 = 6.0
-    fdiv.s f3, f3, f7      # f3 = x^3 / 6
-
-    fadd.s f0, f0, f3      # f0 = 1 + x + x^2/2 + x^3/6
-
-    li  t0, 24             # Load constant 24
-    fcvt.s.w f8, t0        # Convert to float: f8 = 24.0
-    fdiv.s f4, f4, f8      # f4 = x^4 / 24
-
-    fadd.s f0, f0, f4      # f0 = 1 + x + x^2/2 + x^3/6 + x^4/24
-
-    fmv.s fa0, f0          # Copy result to return register
+        addi t3, zero, 1                # t0 = 1
+        fcvt.s.w f0, t3                 # f0 = float(1)
+        vfmv.v.f v1, f0                 # v1 = broadcast 1.0
+        vfmv.v.f v2, f0                 # v2 = term vector
 
 
-    lw   t0, 0(sp)
-    lw   t1, 4(sp)
-    lw   t2, 8(sp)
-    lw   t3, 12(sp)
-    lw   t4, 16(sp)
-    lw   t5, 20(sp)
-    lw   t6, 24(sp)
-    addi sp, sp, 28 
+        li t2, 100              # Load constant 1
+        li t3,1
 
-    ret                    # Return from function
+        exp_loop:
+            bge t3 , t2 ,exp_done
+
+            vfmul.vv v2 ,v2 ,v0 # =x/i(prev)*x
+
+            fcvt.s.w f0,t3 # load i
+            vfmv.v.f v3,f0 # populate v3 with i
+
+            vfdiv.vv v2,v2,v3 # = x/i(prev) *x/i
+            vfadd.vv v1 ,v1,v2 #accumulate 
+
+            add t3 ,t3,1 # incement pointer
+
+            j exp_loop
+        exp_done:
+
+            vse32.v v1,(s1) # store at probabilities 
+            
+            slli t6,t1,2   # ofset input and probability
+            add s1 ,s1,t6
+            add s0, s0 ,t6
+
+            vfredosum.vs v4,v1, v4  # accumalate exp
+
+
+            bnez t0 , exponentiation
+
+    vfmv.f.s f0 ,v4 # move sum to f0
+    li t0, 10
+    secondpass:
+
+     vsetvli t1,t0,e32  # set vector load
+     vfmv.v.f v4,f0 # populate vector with sum
+     sub t0,t0,t1     # update remaining values
+     slli t1,t1,2   # input and probability
+
+     vle32.v v0,(s2)   #load values from second pass
+
+     vfdiv.vv v0,v0,v4 # divide each stored value with accumulated value
+    
+     vse32.v v0, 0(s2) #store back
+     add s2 ,s2,t1 # update output pointer
+     bnez t0, secondpass
+
+     ret
+
+
+
+
 
 #----------------------------------------------------------------------
 .globl print_input              # Make print function globally accessible
@@ -720,35 +639,7 @@ print_probabilities:                     # Start of print function (debug output
 
 
 input_matrix:
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.004, 0.471, 0.847, 1.000, 0.996, 0.412, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.008, 0.529, 0.996, 0.988, 0.780, 0.929, 0.286, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.008, 0.525, 0.996, 0.984, 0.424, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.278, 0.996, 0.961, 0.427, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.039, 0.733, 0.980, 0.341, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.353, 0.996, 0.800, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.051, 0.804, 0.976, 0.231, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.016, 0.553, 0.996, 0.655, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.306, 0.996, 0.890, 0.039, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.071, 0.953, 0.996, 0.435, 0.000, 0.137, 0.165, 0.165, 0.165, 0.020, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.145, 0.996, 0.918, 0.259, 0.553, 0.965, 0.996, 0.996, 0.996, 0.851, 0.416, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.478, 0.996, 0.996, 0.996, 0.996, 0.510, 0.145, 0.145, 0.325, 0.808, 0.961, 0.243, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.059, 0.961, 0.996, 0.996, 0.702, 0.129, 0.024, 0.000, 0.000, 0.000, 0.231, 0.996, 0.584, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.067, 0.996, 0.906, 0.369, 0.129, 0.000, 0.000, 0.000, 0.000, 0.000, 0.102, 0.941, 0.792, 0.016, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.067, 0.996, 0.898, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.208, 0.984, 0.929, 0.047, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.067, 0.996, 0.898, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.318, 0.996, 0.647, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.027, 0.835, 0.898, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.224, 0.929, 0.925, 0.188, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.224, 0.992, 0.765, 0.259, 0.000, 0.243, 0.463, 0.792, 0.973, 0.996, 0.451, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.004, 0.235, 0.996, 0.992, 0.965, 0.988, 0.996, 0.996, 0.655, 0.176, 0.004, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.004, 0.161, 0.494, 0.714, 0.459, 0.176, 0.016, 0.004, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-.float 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000, 0.000
-
+.float 0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.329,0.725,0.624,0.592,0.235,0.141,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.871,0.996,0.996,0.996,0.996,0.945,0.776,0.776,0.776,0.776,0.776,0.776,0.776,0.776,0.667,0.204,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.263,0.447,0.282,0.447,0.639,0.890,0.996,0.882,0.996,0.996,0.996,0.980,0.898,0.996,0.996,0.549,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.067,0.259,0.055,0.263,0.263,0.263,0.231,0.082,0.925,0.996,0.416,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.325,0.992,0.820,0.071,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.086,0.914,1.000,0.325,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.506,0.996,0.933,0.173,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.231,0.976,0.996,0.243,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.522,0.996,0.733,0.020,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.035,0.804,0.973,0.227,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.494,0.996,0.714,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.294,0.984,0.941,0.224,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.075,0.867,0.996,0.651,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.012,0.796,0.996,0.859,0.137,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.149,0.996,0.996,0.302,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.122,0.878,0.996,0.451,0.004,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.522,0.996,0.996,0.204,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.239,0.949,0.996,0.996,0.204,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.475,0.996,0.996,0.859,0.157,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.475,0.996,0.812,0.071,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000 
 
 
 
