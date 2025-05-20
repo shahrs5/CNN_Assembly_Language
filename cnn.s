@@ -267,7 +267,24 @@ maxpool:                   # Start of maxpooling function
     ret                    # Return from function
 
 
-
+#----------------------------------------------------------------------
+# flatten: Converts a 12x12 matrix (from maxpool) into a 1D vector
+#          using vector strided load and store (RISC-V Vector)
+#
+# Inputs:
+#   a0 = base pointer to 12x12 maxpool output (576 elements, float32)
+#   a1 = base pointer to flatten output (1D array of 576 float32)
+#
+# Registers:
+#   s0 = input pointer (maxpool matrix)
+#   s1 = output pointer (flattened vector)
+#   s2 = stride offset for strided load (576 bytes)
+#   t0 = outer loop counter (row index, 0 to 11)
+#   t1 = inner loop counter (column index, 0 to 11)
+#   t2 = loop bound = 12 (dimension of the matrix)
+#   t3 = number of vector elements to load/store per iteration (8 floats)
+#   t4 = temporary register for vector length config
+#   v0 = vector register for 8 loaded float32 values
 
 .global flatten
 flatten:
@@ -294,75 +311,128 @@ flatten:
 
         addi t1 ,t1,1 #increment column counter
         blt t1,t2,column_loop
-        #end_column
+        end_column:
 
     addi t0 ,t0,1 # increment row counter
     blt t0,t2,row_loop
-    #end_row
+    end_row:
 
 ret
 
 
 
-
-    .globl denselayer       # Make denselayer function globally accessible
-        denselayer:             # Start of dense layer function
-        mv s0 ,a0               #flatten pool
-        mv s1 ,a1               #weight matrix
-        mv s2 ,a2               #bias vector
-        mv s3 ,a3               #final output
-        li t2,10
-        li t4, 40
-
-        li t0,0 
-        dense_outer:
-
-            vsetvli t3,zero,e32  #set vector length to 8 for broadcast
-            vmv.v.i v3,0 
-            mv s0,a0
-            li t5 ,1152 
-            li t1,0
-            slli t3,t0,2
-            add s4,s1,t3
-            dense_inner:
-
-                vsetvli t6,t5, e32
-                sub t5, t5,t6
-                slli t3,t6,2
-                
-                vle32.v v0 , (s0)
-                add s0,s0,t3
+#----------------------------------------------------------------------
+# denselayer: Fully connected layer (dense layer) implementation
+#             Performs: output[i] = dot(flatten, weights[i]) + bias[i]
+#
+# Inputs:
+#   a0 = base pointer to input vector (flattened 12x12 = 144 float32)
+#   a1 = base pointer to weight matrix (10x144, row-major, untransposed)
+#   a2 = base pointer to bias vector (10 float32 values)
+#   a3 = base pointer to output vector (10 float32 outputs)
+#
+# Registers:
+#   s0 = pointer to flattened input vector (reused/reset per neuron)
+#   s1 = pointer to weight matrix (start of all weights)
+#   s2 = pointer to bias vector
+#   s3 = pointer to output vector
+#   s4 = working pointer for weights[i][j]
+#   t0 = outer loop counter (for neurons 0 to 9)
+#   t2 = constant 10 (number of output neurons)
+#   t4 = constant 40 (stride in bytes = 10*4; used for strided weight loads)
+#   t5 = number of elements left to process in inner loop (starts at 144)
+#   t6 = vector length for each iteration of inner loop
+#   v0 = vector register for input vector (flattened image)
+#   v1 = vector register for weights[i][j]
+#   v2 = vector product of v0 and v1
+#   v3 = accumulator for dot product
 
 
-                vlse32.v v1 , (s4),t4
-                mul t3,t6,t4
-                add s4 ,s4,t3
 
-                vfmul.vv v2,v1,v0
+.globl denselayer       # Make denselayer function globally accessible
+    denselayer:             # Start of dense layer function
+    mv s0 ,a0               #flatten pool
+    mv s1 ,a1               #weight matrix
+    mv s2 ,a2               #bias vector
+    mv s3 ,a3               #final output
+    li t2,10                #load constant 10 for dense outer loop
+    li t4, 40               #load offset for weights ( weightd are default tensor flow format not updated )
 
-                vfredosum.vs v3,v2,v3
+    li t0,0                 #initialize variable for outer loop
+    dense_outer:
 
-                bnez t5 , dense_inner
+        vsetvli t3,zero,e32  #set vector length to 8 for broadcast
+        vmv.v.i v3,0         #set up an accumulator
+        mv s0,a0             #reset flatten pool pointer
+        li t5 ,1152          # load number of elements to process
+        li t1,0              # dead code ???
+        slli t3,t0,2         # calculate offset for weight matriz
+        add s4,s1,t3         #working pointer for weight matrix offest so weight [i][0]
+        dense_inner:        
+
+            vsetvli t6,t5, e32    #set vectot length to min(8,remaining elements)
+            sub t5, t5,t6         # update remaining elements
+            slli t3,t6,2          # caculate offset
+            
+            vle32.v v0 , (s0)    #load flatten
+            add s0,s0,t3         # offset flatten
 
 
-            done_inner:
+            vlse32.v v1 , (s4),t4 # strided segement load from weight matrix (as its not transposed)
+            mul t3,t6,t4          #caculate next offset by value loaded *40
+            add s4 ,s4,t3         #offset s4
 
-            flw f0,(s2)
-            vfmv.f.s f1,v3
-            fadd.s f1,f1,f0
-            fsw f1,(s3)
-        
-            addi s3,s3,4
-            addi s2,s2,4
+            vfmul.vv v2,v1,v0     #multiply both vectors
 
-        addi t0 ,t0 ,1
-        blt t0,t2,dense_outer
-        done_outer:                                                                                                                                                                                        
+            vfredosum.vs v3,v2,v3 #vector reduce sum into accumulator
+
+            bnez t5 , dense_inner #loop untill values exhuasted
 
 
-        ret
+        done_inner:
+
+        flw f0,(s2)      #load bias value
+        vfmv.f.s f1,v3   #load move accumlator value
+        fadd.s f1,f1,f0  #add bias to accumlator value
+        fsw f1,(s3)      #store at location
+    
+        addi s3,s3,4 #offset pointer for storage
+        addi s2,s2,4 #offset pointer for bias
+
+    addi t0 ,t0 ,1    #increment variable for outer loop
+    blt t0,t2,dense_outer #loop untill 10
+    done_outer:                                                                                                                                                                                        
+
+
+    ret
     
 
+
+
+#----------------------------------------------------------------------
+# softmax: Computes softmax over a 10-element vector using Taylor
+#          series approximation for exponentiation.
+#
+# Inputs:
+#   a0 = base pointer to input vector (10 float32 values from dense layer)
+#   a1 = base pointer to output vector (softmax probabilities)
+#
+# Registers:
+#   s0 = input pointer (dense layer output)
+#   s1 = output pointer for first pass (exp(x))
+#   s2 = output pointer for second pass (normalization)
+#   t0 = loop counter / remaining values to process
+#   t1 = vector length per iteration
+#   t2 = constant upper limit for Taylor expansion (100 terms)
+#   t3 = Taylor loop counter
+#   t4 = temporary for vector config
+#   t6 = byte offset for pointer updates
+#   f0 = scalar float temp (loop index or sum)
+#   v0 = input vector chunk
+#   v1 = accumulator for exp(x) approximation
+#   v2 = term in Taylor expansion
+#   v3 = vector loop index (float)
+#   v4 = accumulator for total sum of exponentials (used for normalization)
 
 
 .globl softmax
