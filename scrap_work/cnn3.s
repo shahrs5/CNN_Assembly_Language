@@ -320,7 +320,7 @@ flatten:
 ret
 
 
-
+#old and incorrect 
 #----------------------------------------------------------------------
 # denselayer: Fully connected layer (dense layer) implementation
 #             Performs: output[i] = dot(input, weights[i][:]) + bias[i]
@@ -352,81 +352,192 @@ ret
 #   v2 = vector product of v0 and v1
 #   v3 = accumulator for dot product
 
-.globl denselayer       # Make denselayer function globally accessible
-denselayer:             # Start of dense layer function
-    mv s0, a0           # input vector pointer
-    mv s1, a1           # weight matrix base pointer
-    mv s2, a2           # bias vector pointer
-    mv s3, a3           # output vector pointer
-    li t2, 10           # number of output neurons
-    li t0, 0            # initialize outer loop counter
+# .globl denselayer       # Make denselayer function globally accessible
+# denselayer:             # Start of dense layer function
+#     mv s0, a0           # input vector pointer
+#     mv s1, a1           # weight matrix base pointer
+#     mv s2, a2           # bias vector pointer
+#     mv s3, a3           # output vector pointer
+#     li t2, 10           # number of output neurons
+#     li t0, 0            # initialize outer loop counter
 
-dense_outer:
-    # Initialize accumulator for current neuron
-    vsetvli t3, zero, e32
-    vmv.v.i v3, 0       # clear accumulator
+# dense_outer:
+#     # Initialize accumulator for current neuron
+#     vsetvli t3, zero, e32
+#     vmv.v.i v3, 0       # clear accumulator
     
-    # Calculate pointer to current weight row: weights[t0][0]
-    li t3, 1152         # elements per row
-    slli t3, t3, 2      # convert to bytes (1152 * 4)
-    mul t3, t0, t3      # row offset in bytes
-    add s4, s1, t3      # s4 = &weights[t0][0]
+#     # Calculate pointer to current weight row: weights[t0][0]
+#     li t3, 1152         # elements per row
+#     slli t3, t3, 2      # convert to bytes (1152 * 4)
+#     mul t3, t0, t3      # row offset in bytes
+#     add s4, s1, t3      # s4 = &weights[t0][0]
     
-    # Reset input pointer for this neuron
-    mv s0, a0
+#     # Reset input pointer for this neuron
+#     mv s0, a0
     
-    # Process 8 blocks of 144 elements each (8 * 144 = 1152)
-    li t1, 0            # block counter
+#     # Process 8 blocks of 144 elements each (8 * 144 = 1152)
+#     li t1, 0            # block counter
     
-dense_block_loop:
-    # Process one block of 144 elements
-    li t4, 144          # elements in current block
+# dense_block_loop:
+#     # Process one block of 144 elements
+#     li t4, 144          # elements in current block
     
-dense_inner:
-    vsetvli t5, t4, e32 # set vector length to min(vlen, remaining elements)
-    sub t4, t4, t5      # update remaining elements in block
-    slli t3, t5, 2      # calculate byte offset for this vector
+# dense_inner:
+#     vsetvli t5, t4, e32 # set vector length to min(vlen, remaining elements)
+#     sub t4, t4, t5      # update remaining elements in block
+#     slli t3, t5, 2      # calculate byte offset for this vector
     
-    # Load input vector elements
-    vle32.v v0, (s0)
-    add s0, s0, t3      # advance input pointer
+#     # Load input vector elements
+#     vle32.v v0, (s0)
+#     add s0, s0, t3      # advance input pointer
     
-    # Load corresponding weight elements
-    vle32.v v1, (s4)
-    add s4, s4, t3      # advance weight pointer
+#     # Load corresponding weight elements
+#     vle32.v v1, (s4)
+#     add s4, s4, t3      # advance weight pointer
     
-    # Multiply and accumulate
-    vfmul.vv v2, v1, v0     # element-wise multiply
-    vfredosum.vs v3, v2, v3 # reduce sum into accumulator
+#     # Multiply and accumulate
+#     vfmul.vv v2, v1, v0     # element-wise multiply
+#     vfredosum.vs v3, v2, v3 # reduce sum into accumulator
     
-    bnez t4, dense_inner    # continue if elements remain in block
+#     bnez t4, dense_inner    # continue if elements remain in block
     
-    # Move to next block
-    addi t1, t1, 1
-    li t3, 8
-    blt t1, t3, dense_block_loop  # process next block if t1 < 8
+#     # Move to next block
+#     addi t1, t1, 1
+#     li t3, 8
+#     blt t1, t3, dense_block_loop  # process next block if t1 < 8
     
-    # Add bias and store result
-    slli t3, t0, 2      # calculate bias offset
-    add t3, s2, t3      # pointer to bias[t0]
-    flw f0, (t3)        # load bias value
-    vfmv.f.s f1, v3     # move accumulator to scalar register
-    fadd.s f1, f1, f0   # add bias
+#     # Add bias and store result
+#     slli t3, t0, 2      # calculate bias offset
+#     add t3, s2, t3      # pointer to bias[t0]
+#     flw f0, (t3)        # load bias value
+#     vfmv.f.s f1, v3     # move accumulator to scalar register
+#     fadd.s f1, f1, f0   # add bias
+    
+#     # Store result
+#     slli t3, t0, 2      # calculate output offset
+#     add t3, s3, t3      # pointer to output[t0]
+#     fsw f1, (t3)        # store result
+    
+#     # Next neuron
+#     addi t0, t0, 1
+#     blt t0, t2, dense_outer  # continue if t0 < 10
+
+# done_outer:
+#     ret 
+
+#new and improved -- to be tested
+#----------------------------------------------------------------------
+# denselayer: fully connected layer implementation
+#             Performs: output[i] = dot(input, weights[i]) + bias[i]
+#
+# Inputs:
+#   a0 = base pointer to input vector (flattened, size determined by application)
+#   a1 = base pointer to weight matrix (10×1152, row-major format)
+#   a2 = base pointer to bias vector (10 float32 values)
+#   a3 = base pointer to output vector (10 float32 outputs)
+#   a4 = input size (1152 for this implementation)
+#
+# Weight matrix layout (row-major):
+#   weights[0][0], weights[0][1], ..., weights[0][1151],
+#   weights[1][0], weights[1][1], ..., weights[1][1151],
+#   ...
+#   weights[9][0], weights[9][1], ..., weights[9][1151]
+#
+# Registers:
+#   s0 = pointer to input vector (reset per neuron)
+#   s1 = pointer to current weight row
+#   s2 = pointer to bias vector
+#   s3 = pointer to output vector
+#   s4 = input size (1152)
+#   t0 = outer loop counter (neurons 0-9)
+#   t1 = inner loop remaining elements
+#   t2 = vector length for current iteration
+#   t3 = temporary for address calculations
+#   v0 = input vector chunk
+#   v1 = weight vector chunk
+#   v2 = element-wise products
+#   v3 = dot product accumulator
+
+.globl denselayer
+denselayer:
+    # Save callee-saved registers
+    addi sp, sp, -32
+    sw s0, 0(sp)
+    sw s1, 4(sp)
+    sw s2, 8(sp)
+    sw s3, 12(sp)
+    sw s4, 16(sp)
+    sw ra, 20(sp)
+    
+    # Initialize pointers and constants
+    mv s0, a0                # input vector base
+    mv s1, a1                # weight matrix base
+    mv s2, a2                # bias vector base
+    mv s3, a3                # output vector base
+    mv s4, a4                # input size (1152)
+    
+    li t0, 0                 # outer loop counter (neuron index)
+    
+neuron_loop:
+    # Initialize accumulator for this neuron
+    vsetvli t2, zero, e32, m1
+    vmv.v.i v3, 0            # clear accumulator
+    
+    # Reset pointers for this neuron
+    mv a0, s0                # reset input pointer
+    mv a1, s1                # current weight row pointer
+    mv t1, s4                # remaining elements to process
+    
+inner_loop:
+    vsetvli t2, t1, e32, m1    # Set vector length for this iteration
+    vle32.v v0, (a0)           # Load input chunk
+    vle32.v v1, (a1)           # Load corresponding weight chunk (sequential load)
+    vfmul.vv v2, v0, v1        # Compute element-wise products
+    vfredosum.vs v3, v2, v3    # Accumulate into dot product
+    
+    # Update pointers and counter
+    slli t3, t2, 2           # t3 = vector_length * 4 (bytes)
+    add a0, a0, t3           # advance input pointer
+    add a1, a1, t3           # advance weight pointer
+    sub t1, t1, t2           # decrease remaining elements
+    
+    # Continue if more elements to process
+    bnez t1, inner_loop
+    
+    # Extract scalar result from accumulator
+    vfmv.f.s f0, v3
+    
+    # Add bias
+    flw f1, (s2)
+    fadd.s f0, f0, f1
     
     # Store result
-    slli t3, t0, 2      # calculate output offset
-    add t3, s3, t3      # pointer to output[t0]
-    fsw f1, (t3)        # store result
+    fsw f0, (s3)
     
-    # Next neuron
-    addi t0, t0, 1
-    blt t0, t2, dense_outer  # continue if t0 < 10
-
-done_outer:
-    ret 
+    # Move to next neuron
+    addi t0, t0, 1           # increment neuron counter
+    addi s2, s2, 4           # next bias element
+    addi s3, s3, 4           # next output element
     
-
-
+    # Calculate next weight row address
+    # Next row = current_row + input_size * 4 bytes
+    slli t3, s4, 2           # input_size * 4
+    add s1, s1, t3           # move to next weight row
+    
+    # Check if more neurons to process
+    li t3, 10
+    blt t0, t3, neuron_loop
+    
+    # Restore callee-saved registers
+    lw s0, 0(sp)
+    lw s1, 4(sp)
+    lw s2, 8(sp)
+    lw s3, 12(sp)
+    lw s4, 16(sp)
+    lw ra, 20(sp)
+    addi sp, sp, 32
+    
+    ret
 
 #----------------------------------------------------------------------
 # softmax: Computes softmax over a 10-element vector using Taylor
